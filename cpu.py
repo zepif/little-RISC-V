@@ -57,10 +57,10 @@ def ws(dat, addr):
     assert  addr >= 0 and addr < len(memory)
     memory = memory[:addr] + dat + memory[addr+len(dat):]
 
-
 def r32(addr):
     addr -=  0x80000000
-    assert addr >= 0 and addr < len(memory)
+    if addr < 0 or addr >= len(memory):
+        raise Exception("read out of bounds: 0x%x" % addr)
     return struct.unpack("<I", memory[addr:addr+4])[0]
 
 def dump():
@@ -73,6 +73,11 @@ def dump():
     pp += "\n  PC: %08x" % regfile[PC]
     print(''.join(pp))
 
+def sign_extend(x, l):
+    if x >> (l-1) == 1:
+        return (1 << l) - x
+    else:
+        return x
 
 def step():
     # Instruction Fetch
@@ -88,14 +93,35 @@ def step():
     if opcode == Ops.JAL:
         # J-type Instruction
         rd = gibi(11, 7)
-        offset = gibi(31, 30) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
+        offset = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
         #print(hex(offset), rd)
+        regfile[rd] = regfile[PC] + 4
         regfile[PC] += offset
         return True
+    elif opcode == Ops.JALR:
+        # I-type Instruction
+        rd = gibi(11, 7)
+        rs1 = gibi(19, 15)
+        imm = sign_extend(gibi(31, 20), 12)
+        regfile[rd] = regfile[PC] + 4
+        regfile[PC] = regfile[rs1] + imm
+        return True
     elif opcode == Ops.AUIPC:
+        #U-type Instruction
         rd = gibi(11, 7)
         imm = gibi(31, 20)
         regfile[rd] = regfile[PC] + imm
+    elif opcode == Ops.OP:
+        # R-type Instruction
+        rs1 = gibi(19, 15)
+        rs2 = gibi(24, 20)
+        funct3 = Funct3(gibi(14, 12))
+        funct7 =  gibi(31, 25)
+        if funct3 == Funct3.ADD:
+            regfile[rd] = regfile[rs1] + regfile[rs2]
+        else:
+            dump()
+            raise Exception("write funct3 %r" % funct3)
     elif opcode == Ops.IMM:
         # I-type Instruction
         rd = gibi(11, 7)
