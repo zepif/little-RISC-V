@@ -47,6 +47,22 @@ class Funct3(Enum):
     OR = ORI = 0b110
     AND = ANDI = 0b111
 
+    BEQ = 0b000
+    BNE = 0b001
+    BLT = 0b100
+    BGE = 0b101
+    BLTU = 0b110
+    BGEU = 0b111
+   
+    # stupsoadiusaj=PDKSfms;DF;SD,F'
+    ECALL = 0b000
+    CSRRW = 0b001
+    CSRRS = 0b010
+    CSRRC = 0b011
+    CSRRWI = 0b101
+    CSRRSI = 0b110
+    CSRRCI = 0b111
+
 # 64k at 0x80000000
 memory = b'\x00'*0x10000
 
@@ -75,7 +91,7 @@ def dump():
 
 def sign_extend(x, l):
     if x >> (l-1) == 1:
-        return (1 << l) - x
+        return -((1 << l) - x)
     else:
         return x
 
@@ -94,6 +110,7 @@ def step():
         # J-type Instruction
         rd = gibi(11, 7)
         offset = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
+        offset = sign_extend(offset, 21)
         #print(hex(offset), rd)
         regfile[rd] = regfile[PC] + 4
         regfile[PC] += offset
@@ -106,6 +123,11 @@ def step():
         regfile[rd] = regfile[PC] + 4
         regfile[PC] = regfile[rs1] + imm
         return True
+    elif opcode == Ops.LUI:
+        #U-type Instruction
+        rd = gibi(11, 7)
+        imm = gibi(31, 20)
+        regfile[rd] = imm << 12
     elif opcode == Ops.AUIPC:
         #U-type Instruction
         rd = gibi(11, 7)
@@ -113,31 +135,98 @@ def step():
         regfile[rd] = regfile[PC] + imm
     elif opcode == Ops.OP:
         # R-type Instruction
+        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         funct7 =  gibi(31, 25)
         if funct3 == Funct3.ADD:
             regfile[rd] = regfile[rs1] + regfile[rs2]
+        elif funct3 == Funct3.OR:
+            regfile[rd] = regfile[rs1] | regfile[rs2]
         else:
             dump()
-            raise Exception("write funct3 %r" % funct3)
+            raise Exception("write %r funct3 %r" % (opcode, funct3)) 
     elif opcode == Ops.IMM:
         # I-type Instruction
         rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
         imm = gibi(31, 20)
-        print(rd, rs1, funct3, imm)
+        #print(rd, rs1, funct3, imm)
         if funct3 == Funct3.ADDI:
             regfile[rd] = regfile[rs1] + imm
         elif funct3 == Funct3.SLLI:
             regfile[rd] = regfile[rs1] << imm
+        elif funct3 == Funct3.SRLI:
+            regfile[rd] = regfile[rs1] >> imm
+        elif funct3 == Funct3.ORI:
+            regfile[rd] = regfile[rs1] | imm
+        elif funct3 == Funct3.XOR:
+            regfile[rd] = regfile[rs1] ^ imm
         else:
             dump()
-            raise Exception("write funct3 %r" % funct3)
-    elif opcode == Ops.SYSTEM:
+            raise Exception("write %r funct3 %r" % (opcode, funct3))
+    elif opcode == Ops.BRANCH:
+        # B-type Instruction
+        rs1 = gibi(19, 15)
+        rs2 = gibi(24, 20)
+        funct3 = Funct3(gibi(14, 12))
+        offset = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8)<< 1 | gibi(8, 7)<<11
+        offset = sign_extend(offset, 13)
+        cond = False
+        if funct3 == Funct3.BEQ:
+            cond = regfile[rs1] == regfile[rs2]
+        elif funct3 == Funct3.BNE:
+            cond = regfile[rs1] != regfile[rs2]
+        elif funct3 == Funct3.BLT:
+            cond = regfile[rs1] < regfile[rs2]
+        elif funct3 == Funct3.BGE:
+            cond = regfile[rs1] >= regfile[rs2]
+        else:
+            dump()
+            raise Exception("write %r funct3 %r" % (opcode, funct3))
+        if cond:
+            #print(hex(offset))
+            regfile[PC] += offset
+            return True
+    elif opcode == Ops.LOAD:
+        rd = gibi(11, 7)
+        rs1 = gibi(19, 15)
+        funct3 = Funct3(gibi(14, 12))
+        imm = sign_extend(gibi(31, 20), 12)
+        addr = (regfile[rs1] + imm)
+        print("LOAD %8x" % (addr))
+    elif opcode == Ops.STORE:
+        # S-type Instruction
+        rs1 = gibi(19, 15)
+        rs2 = gibi(24, 20)
+        width = gibi(14, 12)
+        offset = sign_extend(gibi(31, 25) << 5 | gibi(11, 7), 12)
+        addr = (regfile[rs1] + offset)
+        value = regfile[rs2]
+        print("STORE %8x = %x" % (addr, value))
+    elif opcode == Ops.MISC:
         pass
+    elif opcode == Ops.SYSTEM:
+        funct3 = Funct3(gibi(14, 12))
+        rd = gibi(11, 7)
+        rs1 = gibi(19, 15)
+        csr = gibi(31, 20)
+        if funct3 == Funct3.CSRRS:
+            print("CSRRS", rd, rs1, csr)
+        elif funct3 == Funct3.CSRRW:
+            print("CSRRW", rd, rs1, csr)
+            if csr == 3072:
+                print("SUCCESS")
+                return False
+        elif funct3 == Funct3.CSRRWI:
+            print("CSRWI", rd, rs1, csr)
+        elif funct3 == Funct3.ECALL:
+            print("ecall")
+            return False
+        else:
+            raise Exception("write more csr crap")
     else:
         dump()
         raise Exception("wrtie op %r" % opcode)
