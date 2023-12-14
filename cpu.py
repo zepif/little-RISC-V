@@ -4,7 +4,11 @@ from elftools.common.exceptions import ELFError
 import struct
 import glob
 
-# PC is 32
+regnames = \
+    ['x0', 'ra', 'sp', 'gp', 'tp'] + ['t%d'%i for i in range(0, 3)] +\
+    ['s0', 's1'] + ['a%d'%i for i in range(0, 8)] +\
+    ['s%d'%i for i in range(2, 12)] + ['t%d'%i for i in range(3, 7)] + ["PC"]
+
 class Regfile:
     def __init__(self):
         self.regs = [0]*33
@@ -81,12 +85,10 @@ def r32(addr):
 
 def dump():
     pp = []
-    for i in range(32):
+    for i in range(33):
         if i % 8 == 0 and i != 0:
             pp += "\n"
-        pp += " %3s: %08x" % ("x%d" % i, regfile[i])
-
-    pp += "\n  PC: %08x" % regfile[PC]
+        pp += " %3s: %08x" % (regnames[i], regfile[i])
     print(''.join(pp))
 
 def sign_extend(x, l):
@@ -126,12 +128,12 @@ def step():
     elif opcode == Ops.LUI:
         #U-type Instruction
         rd = gibi(11, 7)
-        imm = gibi(31, 20)
+        imm = gibi(31, 12)
         regfile[rd] = imm << 12
     elif opcode == Ops.AUIPC:
         #U-type Instruction
         rd = gibi(11, 7)
-        imm = gibi(31, 20)
+        imm = sign_extend(gibi(31, 20), 12)
         regfile[rd] = regfile[PC] + imm
     elif opcode == Ops.OP:
         # R-type Instruction
@@ -152,7 +154,8 @@ def step():
         rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
-        imm = gibi(31, 20)
+        #imm = gibi(31, 20)
+        imm = sign_extend(gibi(31, 20), 12)
         #print(rd, rs1, funct3, imm)
         if funct3 == Funct3.ADDI:
             regfile[rd] = regfile[rs1] + imm
@@ -218,19 +221,21 @@ def step():
         elif funct3 == Funct3.CSRRW:
             print("CSRRW", rd, rs1, csr)
             if csr == 3072:
-                print("SUCCESS")
                 return False
         elif funct3 == Funct3.CSRRWI:
             print("CSRWI", rd, rs1, csr)
         elif funct3 == Funct3.ECALL:
-            print("ecall")
-            return False
+            print("ecall", regfile[3])
+            if regfile[3] == 21:
+                raise Exception("FAILURE IN TEST, PLS CHECK")
+            #return False
         else:
             raise Exception("write more csr crap")
     else:
         dump()
         raise Exception("wrtie op %r" % opcode)
-
+    
+    dump()
     regfile[PC] += 4
     return True
 
@@ -252,3 +257,4 @@ if __name__ == "__main__":
         except ELFError as elf_error:
             print(f"error processing {x}: {elf_error}")
             continue
+        
