@@ -71,7 +71,7 @@ class Funct3(Enum):
     LBU = 0b100
     LHU = 0b101
 
-    # stupsoadiusaj=PDKSfms;DF;SD,F'
+    # Stupid instructions below this line
     ECALL = 0b000
     CSRRW = 0b001
     CSRRS = 0b010
@@ -138,55 +138,50 @@ def step():
     # Instruction Decode
     opcode = Ops(gibi(6, 0))
     npc = regfile[PC] + 4
+    pend = None
     #print("%x %8x %r" % (regfile[PC], ins, opcode)) 
-
+    rd = gibi(11, 7)
     if opcode == Ops.JAL:
         # J-type Instruction
-        rd = gibi(11, 7)
         offset = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
         offset = sign_extend(offset, 21)
         #print(hex(offset), rd)
-        regfile[rd] = regfile[PC] + 4
+        pend = regfile[PC] + 4
         npc = regfile[PC] + offset
     elif opcode == Ops.JALR:
         # I-type Instruction
-        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         imm = sign_extend(gibi(31, 20), 12)
         npc = regfile[rs1] + imm
-        regfile[rd] = regfile[PC] + 4
+        pend = regfile[PC] + 4
     elif opcode == Ops.LUI:
         #U-type Instruction
-        rd = gibi(11, 7)
         imm = gibi(31, 12)
-        regfile[rd] = imm << 12
+        pend = imm << 12
     elif opcode == Ops.AUIPC:
         #U-type Instruction
-        rd = gibi(11, 7)
         imm = sign_extend(((gibi(31, 12)) << 12), 32)
-        regfile[rd] = regfile[PC] + imm
+        pend = regfile[PC] + imm
     elif opcode == Ops.OP:
         # R-type Instruction
-        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         funct7 =  gibi(31, 25)
         if funct3 == Funct3.ADD and funct7 == 0b0100000:
             # this is sub
-            regfile[rd] = regfile[rs1]- regfile[rs2]
+            pend = regfile[rs1]- regfile[rs2]
         elif funct3 == Funct3.SRA and funct7 == 0b0100000:
             # this is SRAI
             shift = regfile[rs2] & 0x1F
             sb = regfile[rs1] >> 31
             out = regfile[rs1] >> shift
             out |= (0xFFFFFFFF * sb) << (32-shift)
-            regfile[rd] = out
+            pend = out
         else:
-            regfile[rd] = arith(funct3, regfile[rs1], regfile[rs2])
+            pend = arith(funct3, regfile[rs1], regfile[rs2])
     elif opcode == Ops.IMM:
         # I-type Instruction
-        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
         #imm = gibi(31, 20)
@@ -198,9 +193,9 @@ def step():
             sb = regfile[rs1] >> 31
             out = regfile[rs1] >> gibi(24, 20)
             out |= (0xFFFFFFFF * sb) << (32 - gibi(24, 20))
-            regfile[rd] = out
+            pend = out
         else:
-            regfile[rd] = arith(funct3, regfile[rs1], imm)
+            pend = arith(funct3, regfile[rs1], imm)
     elif opcode == Ops.BRANCH:
         # B-type Instruction
         rs1 = gibi(19, 15)
@@ -228,22 +223,21 @@ def step():
             #print(hex(offset))
             npc = regfile[PC] + offset
     elif opcode == Ops.LOAD:
-        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
         imm = sign_extend(gibi(31, 20), 12)
         addr = (regfile[rs1] + imm)
         #print("LOAD %8x" % (addr))
         if funct3 == Funct3.LB:
-            regfile[rd] = sign_extend(r32(addr)&0xFF, 8)
+            pend = sign_extend(r32(addr)&0xFF, 8)
         elif funct3 == Funct3.LH:
-            regfile[rd] = sign_extend(r32(addr)&0xFFFF, 16)
+            pend = sign_extend(r32(addr)&0xFFFF, 16)
         elif funct3 == Funct3.LW:
-            regfile[rd] = r32(addr)
+            pend = r32(addr)
         elif funct3 == Funct3.LBU:
-            regfile[rd] = r32(addr)&0xFF
+            pend = r32(addr)&0xFF
         elif funct3 == Funct3.LHU:
-            regfile[rd] = r32(addr)&0xFFFF
+            pend = r32(addr)&0xFFFF
     elif opcode == Ops.STORE:
         # S-type Instruction
         rs1 = gibi(19, 15)
@@ -264,7 +258,6 @@ def step():
         pass
     elif opcode == Ops.SYSTEM:
         funct3 = Funct3(gibi(14, 12))
-        rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         csr = gibi(31, 20)
         if funct3 == Funct3.CSRRS:
@@ -290,6 +283,8 @@ def step():
     
     # Register write back
     #dump()
+    if pend is not None:
+        regfile[rd] = pend
     regfile[PC] = npc
     return True
 
