@@ -76,7 +76,7 @@ class Funct3(Enum):
 
 def ws(dat, addr):
     global memory
-    print(hex(addr), len(dat))
+    #print(hex(addr), len(dat))
     addr -= 0x80000000
     assert  addr >= 0 and addr < len(memory)
     memory = memory[:addr] + dat + memory[addr+len(dat):]
@@ -105,9 +105,9 @@ def arith(funct3, x, y):
     if funct3 == Funct3.ADDI:
         return x+y
     elif funct3 == Funct3.SLLI:
-        return x<<y
+        return x<<(y&0x1f)
     elif funct3 == Funct3.SRLI:
-        return x>>y
+        return x>>(y&0x1f)
     elif funct3 == Funct3.ORI:
         return x | y
     elif funct3 == Funct3.XORI:
@@ -117,7 +117,7 @@ def arith(funct3, x, y):
     elif funct3 == Funct3.SLT:
         return int(sign_extend(x, 32) < sign_extend(y, 32))
     elif funct3 == Funct3.SLTU:
-        return int(x < y)
+        return int(x&0xFFFFFFFF < y&0xFFFFFFFF)
     else:
         dump()
         raise Exception("write funct3 %r" % (funct3))
@@ -131,7 +131,7 @@ def step():
 
     # Instruction Decode
     opcode = Ops(gibi(6, 0))
-    print("%x %8x %r" % (regfile[PC], ins, opcode)) 
+    #print("%x %8x %r" % (regfile[PC], ins, opcode)) 
 
     if opcode == Ops.JAL:
         # J-type Instruction
@@ -147,8 +147,9 @@ def step():
         rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         imm = sign_extend(gibi(31, 20), 12)
-        regfile[rd] = regfile[PC] + 4
+        nv = regfile[PC] + 4
         regfile[PC] = regfile[rs1] + imm
+        regfile[rd] = nv
         return True
     elif opcode == Ops.LUI:
         #U-type Instruction
@@ -158,7 +159,7 @@ def step():
     elif opcode == Ops.AUIPC:
         #U-type Instruction
         rd = gibi(11, 7)
-        imm = sign_extend(gibi(31, 20), 12)
+        imm = sign_extend(((gibi(31, 12)) << 12), 32)
         regfile[rd] = regfile[PC] + imm
     elif opcode == Ops.OP:
         # R-type Instruction
@@ -167,7 +168,19 @@ def step():
         rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         funct7 =  gibi(31, 25)
-        regfile[rd] = arith(funct3, regfile[rs1], regfile[rs2])
+        if funct3 == Funct3.ADD and funct7 == 0b0100000:
+            # this is sub
+            print("sb")
+            regfile[rd] = regfile[rs1]- regfile[rs2]
+        elif funct3 == Funct3.SRA and funct7 == 0b0100000:
+            # this is SRAI
+            shift = regfile[rs2] & 0x1F
+            sb = regfile[rs1] >> 31
+            out = regfile[rs1] >> shift
+            out |= (0xFFFFFFFF * sb) << (32-shift)
+            regfile[rd] = out
+        else:
+            regfile[rd] = arith(funct3, regfile[rs1], regfile[rs2])
     elif opcode == Ops.IMM:
         # I-type Instruction
         rd = gibi(11, 7)
@@ -175,8 +188,16 @@ def step():
         funct3 = Funct3(gibi(14, 12))
         #imm = gibi(31, 20)
         imm = sign_extend(gibi(31, 20), 12)
+        funct7 = gibi(31, 25)
         #print(rd, rs1, funct3, imm)
-        regfile[rd] = arith(funct3, regfile[rs1], imm)
+        if funct3 == Funct3.SRAI and funct7 == 0b0100000:
+            # this is SRAI
+            sb = regfile[rs1] >> 31
+            out = regfile[rs1] >> gibi(24, 20)
+            out |= (0xFFFFFFFF * sb) << (32 - gibi(24, 20))
+            regfile[rd] = out
+        else:
+            regfile[rd] = arith(funct3, regfile[rs1], imm)
     elif opcode == Ops.BRANCH:
         # B-type Instruction
         rs1 = gibi(19, 15)
@@ -238,8 +259,8 @@ def step():
             #print("CSRWI", rd, rs1, csr)
             pass
         elif funct3 == Funct3.ECALL:
-            #print("ecall", regfile[3])
-            if regfile[3] == 21:
+            print("ecall", regfile[3])
+            if regfile[3] > 1:
                 raise Exception("FAILURE IN TEST, PLS CHECK")
             #return False
         else:
@@ -258,6 +279,9 @@ if __name__ == "__main__":
             continue
         try:
             if 'fence_i' in x:
+                continue
+            # TODO: loads and stores
+            if '-p-sh' in x or '-p-lb' in x or '-p-lh' in x or '-p-sb' in x or '-p-sw' in x or '-p-lb' in x or '-p-lw' in x:
                 continue
             with open(x, 'rb') as f:
                 reset()
