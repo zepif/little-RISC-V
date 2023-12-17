@@ -137,6 +137,7 @@ def step():
 
     # Instruction Decode
     opcode = Ops(gibi(6, 0))
+    npc = regfile[PC] + 4
     #print("%x %8x %r" % (regfile[PC], ins, opcode)) 
 
     if opcode == Ops.JAL:
@@ -146,17 +147,14 @@ def step():
         offset = sign_extend(offset, 21)
         #print(hex(offset), rd)
         regfile[rd] = regfile[PC] + 4
-        regfile[PC] += offset
-        return True
+        npc = regfile[PC] + offset
     elif opcode == Ops.JALR:
         # I-type Instruction
         rd = gibi(11, 7)
         rs1 = gibi(19, 15)
         imm = sign_extend(gibi(31, 20), 12)
-        nv = regfile[PC] + 4
-        regfile[PC] = regfile[rs1] + imm
-        regfile[rd] = nv
-        return True
+        npc = regfile[rs1] + imm
+        regfile[rd] = regfile[PC] + 4
     elif opcode == Ops.LUI:
         #U-type Instruction
         rd = gibi(11, 7)
@@ -228,8 +226,7 @@ def step():
             raise Exception("write %r funct3 %r" % (opcode, funct3))
         if cond:
             #print(hex(offset))
-            regfile[PC] += offset
-            return True
+            npc = regfile[PC] + offset
     elif opcode == Ops.LOAD:
         rd = gibi(11, 7)
         rs1 = gibi(19, 15)
@@ -291,8 +288,9 @@ def step():
         dump()
         raise Exception("wrtie op %r" % opcode)
     
+    # Register write back
     #dump()
-    regfile[PC] += 4
+    regfile[PC] = npc
     return True
 
 if __name__ == "__main__":
@@ -300,8 +298,6 @@ if __name__ == "__main__":
         if x.endswith('.dump'):
             continue
         try:
-            if 'fence_i' in x:
-                continue
             with open(x, 'rb') as f:
                 reset()
                 print("test", x)
