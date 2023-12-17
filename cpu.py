@@ -64,7 +64,13 @@ class Funct3(Enum):
     BGE = 0b101
     BLTU = 0b110
     BGEU = 0b111
-   
+    
+    LB = SB = 0b000
+    LH = SH = 0b001
+    LW = SW = 0b010
+    LBU = 0b100
+    LHU = 0b101
+
     # stupsoadiusaj=PDKSfms;DF;SD,F'
     ECALL = 0b000
     CSRRW = 0b001
@@ -74,7 +80,7 @@ class Funct3(Enum):
     CSRRSI = 0b110
     CSRRCI = 0b111
 
-def ws(dat, addr):
+def ws(addr, dat):
     global memory
     #print(hex(addr), len(dat))
     addr -= 0x80000000
@@ -170,7 +176,6 @@ def step():
         funct7 =  gibi(31, 25)
         if funct3 == Funct3.ADD and funct7 == 0b0100000:
             # this is sub
-            print("sb")
             regfile[rd] = regfile[rs1]- regfile[rs2]
         elif funct3 == Funct3.SRA and funct7 == 0b0100000:
             # this is SRAI
@@ -231,16 +236,33 @@ def step():
         funct3 = Funct3(gibi(14, 12))
         imm = sign_extend(gibi(31, 20), 12)
         addr = (regfile[rs1] + imm)
-        print("LOAD %8x" % (addr))
+        #print("LOAD %8x" % (addr))
+        if funct3 == Funct3.LB:
+            regfile[rd] = sign_extend(r32(addr)&0xFF, 8)
+        elif funct3 == Funct3.LH:
+            regfile[rd] = sign_extend(r32(addr)&0xFFFF, 16)
+        elif funct3 == Funct3.LW:
+            regfile[rd] = r32(addr)
+        elif funct3 == Funct3.LBU:
+            regfile[rd] = r32(addr)&0xFF
+        elif funct3 == Funct3.LHU:
+            regfile[rd] = r32(addr)&0xFFFF
     elif opcode == Ops.STORE:
         # S-type Instruction
         rs1 = gibi(19, 15)
         rs2 = gibi(24, 20)
-        width = gibi(14, 12)
+        #width = gibi(14, 12)
+        funct3 = Funct3(gibi(14, 12))
         offset = sign_extend(gibi(31, 25) << 5 | gibi(11, 7), 12)
         addr = (regfile[rs1] + offset)
         value = regfile[rs2]
-        print("STORE %8x = %x" % (addr, value))
+        #print("STORE %8x = %x" % (addr, value))
+        if funct3 == Funct3.SB:
+            ws(addr, struct.pack("B", value&0xFF))
+        elif funct3 == Funct3.SH:
+            ws(addr, struct.pack("H", value&0xFFFF))
+        elif funct3 == Funct3.SW:
+            ws(addr, struct.pack("I", value))
     elif opcode == Ops.MISC:
         pass
     elif opcode == Ops.SYSTEM:
@@ -280,16 +302,13 @@ if __name__ == "__main__":
         try:
             if 'fence_i' in x:
                 continue
-            # TODO: loads and stores
-            if '-p-sh' in x or '-p-lb' in x or '-p-lh' in x or '-p-sb' in x or '-p-sw' in x or '-p-lb' in x or '-p-lw' in x:
-                continue
             with open(x, 'rb') as f:
                 reset()
                 print("test", x)
                 print(f)
                 e = ELFFile(f)
                 for s in e.iter_segments():
-                    ws(s.data(), s.header.p_paddr)
+                    ws(s.header.p_paddr, s.data())
                 regfile[PC] = 0x80000000
                 #print(x, e, text)
                 while(step()):
