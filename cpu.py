@@ -150,16 +150,18 @@ def step():
     pend = None
     #print("%x %8x %r" % (regfile[PC], ins, opcode)) 
     rd = gibi(11, 7)
+    rs1 = gibi(19, 15)
+    rs2 = gibi(24, 20)
+
+    # Execute
     if opcode == Ops.JAL:
         # J-type Instruction
         offset = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
         offset = sign_extend(offset, 21)
-        #print(hex(offset), rd)
         pend = regfile[PC] + 4
         npc = regfile[PC] + offset
     elif opcode == Ops.JALR:
         # I-type Instruction
-        rs1 = gibi(19, 15)
         imm = sign_extend(gibi(31, 20), 12)
         npc = regfile[rs1] + imm
         pend = regfile[PC] + 4
@@ -173,23 +175,17 @@ def step():
         pend = regfile[PC] + imm
     elif opcode == Ops.OP:
         # R-type Instruction
-        rs1 = gibi(19, 15)
-        rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         funct7 =  gibi(31, 25)
         pend = arith(funct3, regfile[rs1], regfile[rs2], funct7 == 0b0100000)
     elif opcode == Ops.IMM:
         # I-type Instruction
-        rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
-        #imm = gibi(31, 20)
         imm = sign_extend(gibi(31, 20), 12)
         funct7 = gibi(31, 25)
         pend = arith(funct3, regfile[rs1], imm, funct7 == 0b0100000 and funct3 == Funct3.SRAI)
     elif opcode == Ops.BRANCH:
         # B-type Instruction
-        rs1 = gibi(19, 15)
-        rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         offset = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8)<< 1 | gibi(8, 7)<<11
         offset = sign_extend(offset, 13)
@@ -219,25 +215,20 @@ def step():
         rs1 = gibi(19, 15)
         csr = gibi(31, 20)
         if funct3 == Funct3.CSRRS:
-            #print("CSRRS", rd, rs1, csr)
             pass
         elif funct3 == Funct3.CSRRW:
-            #print("CSRRW", rd, rs1, csr)
             if csr == 3072:
                 return False
         elif funct3 == Funct3.CSRRWI:
-            #print("CSRWI", rd, rs1, csr)
             pass
         elif funct3 == Funct3.ECALL:
             print("ecall", regfile[3])
             if regfile[3] > 1:
                 raise Exception("FAILURE IN TEST, PLS CHECK")
-            #return False
         else:
             raise Exception("write more csr crap")
     # Memory access step
     elif opcode == Ops.LOAD:
-        rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
         imm = sign_extend(gibi(31, 20), 12)
         addr = (regfile[rs1] + imm)
@@ -254,14 +245,10 @@ def step():
             pend = r32(addr)&0xFFFF
     elif opcode == Ops.STORE:
         # S-type Instruction
-        rs1 = gibi(19, 15)
-        rs2 = gibi(24, 20)
-        #width = gibi(14, 12)
         funct3 = Funct3(gibi(14, 12))
         offset = sign_extend(gibi(31, 25) << 5 | gibi(11, 7), 12)
         addr = (regfile[rs1] + offset)
         value = regfile[rs2]
-        #print("STORE %8x = %x" % (addr, value))
         if funct3 == Funct3.SB:
             ws(addr, struct.pack("B", value&0xFF))
         elif funct3 == Funct3.SH:
