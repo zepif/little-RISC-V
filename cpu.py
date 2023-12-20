@@ -26,8 +26,8 @@ memory = None
 def reset():
     global regfile, memory
     regfile = Regfile()
-    # 64k   at 0x80000000
-    memory = b'\x00'*0x10000
+    # 8kb   at 0x80000000
+    memory = b'\x00'*0x2000
 
 from enum import Enum
 #RV32I Base Instruction Set
@@ -155,17 +155,16 @@ def cond(funct3, vs1, vs2):
         raise Exception("write %r funct3 %r" % (Ops.BRANCH, funct3))
 
 def step():
-    # Instruction Fetch
-    ins = r32(regfile[PC])
+    # *** Instruction Fetch ***
+    ins = r32(regfile[PC]) 
 
+    # *** Instruction Decode and Register Fetch ***
     def gibi(s, e):
         return ((ins >> e) & (1 << (s - e) + 1) - 1)
 
-    # Instruction Decode and register fetch
     opcode = Ops(gibi(6, 0))
     funct3 = Funct3(gibi(14, 12))
     funct7 = gibi(31, 25)
-    npc = regfile[PC] + 4
     imm_i = sign_extend(gibi(31, 20), 12)
     imm_u = sign_extend(gibi(31, 12) << 12, 32)
     imm_j = sign_extend(gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20) << 11 | gibi(19, 12) << 12, 21)
@@ -178,85 +177,99 @@ def step():
     vpc = regfile[PC]
 
     # register write set up
-    rd = gibi(11, 7)
+    rd = gibi(11, 7) if opcode != Ops.BRANCH else 0 
     pend = None
+    reg_writeback = False
+    pend_is_new_pc = False
+    do_load = False
+    do_store = False
     
     print("%x %8x %r" % (vpc, ins, opcode))
 
-    # Execute
+    # *** Execute ***
     if opcode == Ops.JAL:
         # J-type Instruction
-        pend = vpc + 4
-        npc = vpc + imm_j
+        pend_is_new_pc = True
+        pend = vpc + imm_j
     elif opcode == Ops.JALR:
         # I-type Instruction
-        npc = vs1 + imm_i
-        pend = vpc + 4
+        pend_is_new_pc = True
+        pend = vs1 + imm_i
     elif opcode == Ops.BRANCH:
         # B-type Instruction
         if cond(funct3, vs1, vs2):
-            npc = vpc + imm_b
+            pend_is_new_pc = True
+            pend = vpc + imm_b
     elif opcode == Ops.AUIPC:
         #U-type Instruction
+        reg_writeback = True
         pend = arith(Funct3.ADD, vpc, imm_u, False)
     elif opcode == Ops.LUI:
         #U-type Instruction
         pend = imm_u
+        reg_writeback = True
     elif opcode == Ops.OP:
         # R-type Instruction
         pend = arith(funct3, vs1, vs2, funct7 == 0b0100000)
+        reg_writeback = True
     elif opcode == Ops.IMM:
         # I-type Instruction
         pend = arith(funct3, vs1, imm_i, funct7 == 0b0100000 and funct3 == Funct3.SRAI)
+        reg_writeback = True
     elif opcode == Ops.MISC:
         pass
     elif opcode == Ops.SYSTEM:
         # I-type instructions
-        if funct3 == Funct3.CSRRS:
-            pass
-        elif funct3 == Funct3.CSRRW:
-            if imm_i == -1024:
-                return False
-        elif funct3 == Funct3.CSRRWI:
-            pass
+        if funct3 == Funct3.CSRRW and imm_i == -1024:
+            # hack for test exit
+            return False
         elif funct3 == Funct3.ECALL:
             print("ecall", regfile[3])
             if regfile[3] > 1:
                 raise Exception("FAILURE IN TEST, PLS CHECK")
-        else:
-            raise Exception("write more csr crap")
     # Memory access step
     elif opcode == Ops.LOAD:
         # I-type Instruction
-        addr = (vs1 + imm_i)
-        if funct3 == Funct3.LB:
-            pend = sign_extend(r32(addr)&0xFF, 8)
-        elif funct3 == Funct3.LH:
-            pend = sign_extend(r32(addr)&0xFFFF, 16)
-        elif funct3 == Funct3.LW:
-            pend = r32(addr)
-        elif funct3 == Funct3.LBU:
-            pend = r32(addr)&0xFF
-        elif funct3 == Funct3.LHU:
-            pend = r32(addr)&0xFFFF
+        pend = (vs1 + imm_i)
+        do_load = True
+        reg_writeback = True 
     elif opcode == Ops.STORE:
         # S-type Instruction
-        addr = (vs1 + imm_s)
-        if funct3 == Funct3.SB:
-            ws(addr, struct.pack("B", vs2&0xFF))
-        elif funct3 == Funct3.SH:
-            ws(addr, struct.pack("H", vs2&0xFFFF))
-        elif funct3 == Funct3.SW:
-            ws(addr, struct.pack("I", vs2))
+        pend = (vs1 + imm_s)
+        do_store = True
     else:
         dump()
         raise Exception("wrtie op %r" % opcode)
     
-    # Register write back
+    # *** Memory access ***
+    if do_load:
+        if funct3 == Funct3.LB:
+            pend = sign_extend(r32(pend)&0xFF, 8)
+        elif funct3 == Funct3.LH:
+            pend = sign_extend(r32(pend)&0xFFFF, 16)
+        elif funct3 == Funct3.LW:
+            pend = r32(pend)
+        elif funct3 == Funct3.LBU:
+            pend = r32(pend)&0xFF
+        elif funct3 == Funct3.LHU:
+            pend = r32(pend)&0xFFFF
+    elif do_store:
+        if funct3 == Funct3.SB:
+            ws(pend, struct.pack("B", vs2&0xFF))
+        elif funct3 == Funct3.SH:
+            ws(pend, struct.pack("H", vs2&0xFFFF))
+        elif funct3 == Funct3.SW:
+            ws(pend, struct.pack("I", vs2))
+
+    # *** Register write back ***
     #dump()
-    if pend is not None:
-        regfile[rd] = pend
-    regfile[PC] = npc
+    if pend_is_new_pc:
+        regfile[rd] = vpc + 4
+        regfile[PC] = pend
+    else:
+        if reg_writeback:
+            regfile[rd] = pend
+        regfile[PC] = vpc + 4
     return True
 
 if __name__ == "__main__":
