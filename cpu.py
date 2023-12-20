@@ -168,7 +168,6 @@ def step():
     npc = regfile[PC] + 4
     imm_i = gibi(31, 20)
     imm_u = gibi(31, 12)
-
     imm_j = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20) << 11 | gibi(19, 12) << 12
     imm_b = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8) << 1 | gibi(8, 7) << 11
     imm_s = gibi(31, 25) << 5 | gibi(11, 7)
@@ -193,6 +192,10 @@ def step():
         # I-type Instruction
         npc = vs1 + sign_extend(imm_i, 12)
         pend = vpc + 4
+    elif opcode == Ops.BRANCH:
+        # B-type Instruction
+        if cond(funct3, vs1, vs2):
+            npc = vpc + sign_extend(imm_b, 13)
     elif opcode == Ops.AUIPC:
         #U-type Instruction
         pend = arith(Funct3.ADD, vpc, sign_extend(imm_u << 12, 32), False)
@@ -205,10 +208,6 @@ def step():
     elif opcode == Ops.IMM:
         # I-type Instruction
         pend = arith(funct3, vs1, sign_extend(imm_i, 12), funct7 == 0b0100000 and funct3 == Funct3.SRAI)
-    elif opcode == Ops.BRANCH:
-        # B-type Instruction
-        if cond(funct3, vs1, vs2):
-            npc = vpc + sign_extend(imm_b, 13)
     elif opcode == Ops.MISC:
         pass
     elif opcode == Ops.SYSTEM:
