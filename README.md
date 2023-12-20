@@ -8,17 +8,21 @@ A RISC-V core, first in Python, then in Verilog & C--, then on FPGA.
 * [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
 * icarus-verilog
 
+On OS X, you can use [Homebrew](https://brew.sh) to install the dependencies:
 ```sh
 brew install icarus-verilog riscv-gnu-toolchain
 ```
 
+On Ubuntu, executing the following command should suffice:
 ```sh
 sudo apt-get install icarus-verilog riscv-gnu-toolchain
 ```
 
+On Fedora/CentOS/RHEL OS, executing the following command should suffice:
 ```sh
 sudo yum install icarus-verilog riscv-gnu-toolchain
 ```
+On Arch Linux, executing the following command should suffice:
 
 ```sh
 sudo pacman install icarus-verilog riscv-gnu-toolchain
@@ -49,7 +53,6 @@ source env/bin/activate
 4. Install Python packages
 ```sh
 pip install -r requirements.txt
-```
 ```
 
 # TODO
