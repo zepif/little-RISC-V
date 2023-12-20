@@ -107,13 +107,22 @@ def sign_extend(x, l):
     else:
         return x
 
-def arith(funct3, x, y):
+def arith(funct3, x, y, alt):
     if funct3 == Funct3.ADDI:
-        return x+y
+        if alt :
+            return x - y
+        else:
+            return x + y
     elif funct3 == Funct3.SLLI:
-        return x<<(y&0x1f)
+        return x << (y&0x1f)
     elif funct3 == Funct3.SRLI:
-        return x>>(y&0x1f)
+        if alt:
+            sb = x >> 31
+            out = x >> (y&0x1f)
+            out |= (0xFFFFFFFF * sb) << (32 - (y&0x1f))
+            return out
+        else:
+            return x >> (y&0x1f)
     elif funct3 == Funct3.ORI:
         return x | y
     elif funct3 == Funct3.XORI:
@@ -168,18 +177,7 @@ def step():
         rs2 = gibi(24, 20)
         funct3 = Funct3(gibi(14, 12))
         funct7 =  gibi(31, 25)
-        if funct3 == Funct3.ADD and funct7 == 0b0100000:
-            # this is sub
-            pend = regfile[rs1]- regfile[rs2]
-        elif funct3 == Funct3.SRA and funct7 == 0b0100000:
-            # this is SRAI
-            shift = regfile[rs2] & 0x1F
-            sb = regfile[rs1] >> 31
-            out = regfile[rs1] >> shift
-            out |= (0xFFFFFFFF * sb) << (32-shift)
-            pend = out
-        else:
-            pend = arith(funct3, regfile[rs1], regfile[rs2])
+        pend = arith(funct3, regfile[rs1], regfile[rs2], funct7 == 0b0100000)
     elif opcode == Ops.IMM:
         # I-type Instruction
         rs1 = gibi(19, 15)
@@ -187,15 +185,7 @@ def step():
         #imm = gibi(31, 20)
         imm = sign_extend(gibi(31, 20), 12)
         funct7 = gibi(31, 25)
-        #print(rd, rs1, funct3, imm)
-        if funct3 == Funct3.SRAI and funct7 == 0b0100000:
-            # this is SRAI
-            sb = regfile[rs1] >> 31
-            out = regfile[rs1] >> gibi(24, 20)
-            out |= (0xFFFFFFFF * sb) << (32 - gibi(24, 20))
-            pend = out
-        else:
-            pend = arith(funct3, regfile[rs1], imm)
+        pend = arith(funct3, regfile[rs1], imm, funct7 == 0b0100000 and funct3 == Funct3.SRAI)
     elif opcode == Ops.BRANCH:
         # B-type Instruction
         rs1 = gibi(19, 15)
@@ -222,6 +212,30 @@ def step():
         if cond:
             #print(hex(offset))
             npc = regfile[PC] + offset
+    elif opcode == Ops.MISC:
+        pass
+    elif opcode == Ops.SYSTEM:
+        funct3 = Funct3(gibi(14, 12))
+        rs1 = gibi(19, 15)
+        csr = gibi(31, 20)
+        if funct3 == Funct3.CSRRS:
+            #print("CSRRS", rd, rs1, csr)
+            pass
+        elif funct3 == Funct3.CSRRW:
+            #print("CSRRW", rd, rs1, csr)
+            if csr == 3072:
+                return False
+        elif funct3 == Funct3.CSRRWI:
+            #print("CSRWI", rd, rs1, csr)
+            pass
+        elif funct3 == Funct3.ECALL:
+            print("ecall", regfile[3])
+            if regfile[3] > 1:
+                raise Exception("FAILURE IN TEST, PLS CHECK")
+            #return False
+        else:
+            raise Exception("write more csr crap")
+    # Memory access step
     elif opcode == Ops.LOAD:
         rs1 = gibi(19, 15)
         funct3 = Funct3(gibi(14, 12))
@@ -254,29 +268,6 @@ def step():
             ws(addr, struct.pack("H", value&0xFFFF))
         elif funct3 == Funct3.SW:
             ws(addr, struct.pack("I", value))
-    elif opcode == Ops.MISC:
-        pass
-    elif opcode == Ops.SYSTEM:
-        funct3 = Funct3(gibi(14, 12))
-        rs1 = gibi(19, 15)
-        csr = gibi(31, 20)
-        if funct3 == Funct3.CSRRS:
-            #print("CSRRS", rd, rs1, csr)
-            pass
-        elif funct3 == Funct3.CSRRW:
-            #print("CSRRW", rd, rs1, csr)
-            if csr == 3072:
-                return False
-        elif funct3 == Funct3.CSRRWI:
-            #print("CSRWI", rd, rs1, csr)
-            pass
-        elif funct3 == Funct3.ECALL:
-            print("ecall", regfile[3])
-            if regfile[3] > 1:
-                raise Exception("FAILURE IN TEST, PLS CHECK")
-            #return False
-        else:
-            raise Exception("write more csr crap")
     else:
         dump()
         raise Exception("wrtie op %r" % opcode)
