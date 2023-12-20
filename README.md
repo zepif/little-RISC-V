@@ -59,7 +59,7 @@ pip install -r requirements.txt
 
 * Add M instructions for fast multiply and divide
 * Switch to 64-bit
-* Add "RISK" ML accelerator ("K" Standard Extension)
+<!-- * Add "RISK" ML accelerator ("K" Standard Extension)
 
 
 # Notes on Memory system
@@ -72,4 +72,4 @@ I want to support a load/store instruction into 32x32 matrix register (2432 byte
 * rs2 contains two 24-bit strides for x and y. Several of these bits aren't connected
 * "rd" is the extension register to load into / store from
 
-Use some hash function on the addresses to avoid "bank conflicts", can upper bound the fetch time.
+Use some hash function on the addresses to avoid "bank conflicts", can upper bound the fetch time. -->
