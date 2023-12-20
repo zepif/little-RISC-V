@@ -137,6 +137,23 @@ def arith(funct3, x, y, alt):
         dump()
         raise Exception("write funct3 %r" % (funct3))
 
+def cond(funct3, vs1, vs2):
+    if funct3 == Funct3.BEQ:
+        return vs1 == vs2
+    elif funct3 == Funct3.BNE:
+         return vs1 != vs2
+    elif funct3 == Funct3.BLT:
+        return sign_extend(vs1, 32) < sign_extend(vs2, 32)
+    elif funct3 == Funct3.BGE:
+        return sign_extend(vs1, 32) >= sign_extend(vs2, 32)
+    elif funct3 == Funct3.BLTU:
+        return vs1 < vs2
+    elif funct3 == Funct3.BGEU:
+        return vs1 >= vs2
+    else:
+        dump()
+        raise Exception("write %r funct3 %r" % (Ops.BRANCH, funct3))
+
 def step():
     # Instruction Fetch
     ins = r32(regfile[PC])
@@ -146,80 +163,60 @@ def step():
 
     # Instruction Decode and register fetch
     opcode = Ops(gibi(6, 0))
+    funct3 = Funct3(gibi(14, 12))
+    funct7 = gibi(31, 25)
     npc = regfile[PC] + 4
-     
+    imm_i = gibi(31, 20)
+    imm_u = gibi(31, 12)
+
+    imm_j = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20) << 11 | gibi(19, 12) << 12
+    imm_b = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8) << 1 | gibi(8, 7) << 11
+    imm_s = gibi(31, 25) << 5 | gibi(11, 7)
+
     # register reads
     vs1 = regfile[gibi(19, 15)]
     vs2 = regfile[gibi(24, 20)]
     vpc = regfile[PC]
 
-    # register writes
+    # register write set up
     rd = gibi(11, 7)
     pend = None
+    
+    print("%x %8x %r" % (vpc, ins, opcode))
 
     # Execute
     if opcode == Ops.JAL:
         # J-type Instruction
-        offset = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20)<< 11 | gibi(19, 12)<<12
-        offset = sign_extend(offset, 21)
         pend = vpc + 4
-        npc = vpc + offset
+        npc = vpc + sign_extend(imm_j, 21)
     elif opcode == Ops.JALR:
         # I-type Instruction
-        imm = sign_extend(gibi(31, 20), 12)
-        npc = vs1 + imm
+        npc = vs1 + sign_extend(imm_i, 12)
         pend = vpc + 4
     elif opcode == Ops.AUIPC:
         #U-type Instruction
-        imm = sign_extend(((gibi(31, 12)) << 12), 32)
-        pend = vpc + imm
+        pend = arith(Funct3.ADD, vpc, sign_extend(imm_u << 12, 32), False)
     elif opcode == Ops.LUI:
         #U-type Instruction
-        imm = gibi(31, 12)
-        pend = imm << 12
+        pend = imm_u << 12
     elif opcode == Ops.OP:
         # R-type Instruction
-        funct3 = Funct3(gibi(14, 12))
-        funct7 =  gibi(31, 25)
         pend = arith(funct3, vs1, vs2, funct7 == 0b0100000)
     elif opcode == Ops.IMM:
         # I-type Instruction
-        funct3 = Funct3(gibi(14, 12))
-        imm = sign_extend(gibi(31, 20), 12)
-        funct7 = gibi(31, 25)
-        pend = arith(funct3, vs1, imm, funct7 == 0b0100000 and funct3 == Funct3.SRAI)
+        pend = arith(funct3, vs1, sign_extend(imm_i, 12), funct7 == 0b0100000 and funct3 == Funct3.SRAI)
     elif opcode == Ops.BRANCH:
         # B-type Instruction
-        funct3 = Funct3(gibi(14, 12))
-        offset = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8)<< 1 | gibi(8, 7)<<11
-        offset = sign_extend(offset, 13)
-        cond = False
-        if funct3 == Funct3.BEQ:
-            cond = vs1 == vs2
-        elif funct3 == Funct3.BNE:
-            cond = vs1 != vs2
-        elif funct3 == Funct3.BLT:
-            cond = sign_extend(vs1, 32) < sign_extend(vs2, 32)
-        elif funct3 == Funct3.BGE:
-            cond = sign_extend(vs1, 32) >= sign_extend(vs2, 32)
-        elif funct3 == Funct3.BLTU:
-            cond = vs1 < vs2
-        elif funct3 == Funct3.BGEU:
-            cond = vs1 >= vs2
-        else:
-            dump()
-            raise Exception("write %r funct3 %r" % (opcode, funct3))
-        if cond:
-            npc = vpc + offset
+        if cond(funct3, vs1, vs2):
+            npc = vpc + sign_extend(imm_b, 13)
     elif opcode == Ops.MISC:
         pass
     elif opcode == Ops.SYSTEM:
-        funct3 = Funct3(gibi(14, 12))
-        csr = gibi(31, 20)
+        # I-type instructions
         if funct3 == Funct3.CSRRS:
             pass
         elif funct3 == Funct3.CSRRW:
-            if csr == 3072:
+            if imm_i == 3072:
                 return False
         elif funct3 == Funct3.CSRRWI:
             pass
@@ -231,9 +228,8 @@ def step():
             raise Exception("write more csr crap")
     # Memory access step
     elif opcode == Ops.LOAD:
-        funct3 = Funct3(gibi(14, 12))
-        imm = sign_extend(gibi(31, 20), 12)
-        addr = (vs1 + imm)
+        # I-type Instruction
+        addr = (vs1 + sign_extend(imm_i, 12))
         if funct3 == Funct3.LB:
             pend = sign_extend(r32(addr)&0xFF, 8)
         elif funct3 == Funct3.LH:
@@ -246,9 +242,7 @@ def step():
             pend = r32(addr)&0xFFFF
     elif opcode == Ops.STORE:
         # S-type Instruction
-        funct3 = Funct3(gibi(14, 12))
-        offset = sign_extend(gibi(31, 25) << 5 | gibi(11, 7), 12)
-        addr = (vs1 + offset)
+        addr = (vs1 + sign_extend(imm_s, 12))
         if funct3 == Funct3.SB:
             ws(addr, struct.pack("B", vs2&0xFF))
         elif funct3 == Funct3.SH:
