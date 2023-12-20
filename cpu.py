@@ -166,11 +166,11 @@ def step():
     funct3 = Funct3(gibi(14, 12))
     funct7 = gibi(31, 25)
     npc = regfile[PC] + 4
-    imm_i = gibi(31, 20)
-    imm_u = gibi(31, 12)
-    imm_j = gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20) << 11 | gibi(19, 12) << 12
-    imm_b = gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8) << 1 | gibi(8, 7) << 11
-    imm_s = gibi(31, 25) << 5 | gibi(11, 7)
+    imm_i = sign_extend(gibi(31, 20), 12)
+    imm_u = sign_extend(gibi(31, 12) << 12, 32)
+    imm_j = sign_extend(gibi(32, 31) << 20 | gibi(31, 21) << 1 | gibi(21, 20) << 11 | gibi(19, 12) << 12, 21)
+    imm_b = sign_extend(gibi(32, 31) << 12 | gibi(31, 25) << 5 | gibi(11, 8) << 1 | gibi(8, 7) << 11, 13)
+    imm_s = sign_extend(gibi(31, 25) << 5 | gibi(11, 7), 12)
 
     # register reads
     vs1 = regfile[gibi(19, 15)]
@@ -187,27 +187,27 @@ def step():
     if opcode == Ops.JAL:
         # J-type Instruction
         pend = vpc + 4
-        npc = vpc + sign_extend(imm_j, 21)
+        npc = vpc + imm_j
     elif opcode == Ops.JALR:
         # I-type Instruction
-        npc = vs1 + sign_extend(imm_i, 12)
+        npc = vs1 + imm_i
         pend = vpc + 4
     elif opcode == Ops.BRANCH:
         # B-type Instruction
         if cond(funct3, vs1, vs2):
-            npc = vpc + sign_extend(imm_b, 13)
+            npc = vpc + imm_b
     elif opcode == Ops.AUIPC:
         #U-type Instruction
-        pend = arith(Funct3.ADD, vpc, sign_extend(imm_u << 12, 32), False)
+        pend = arith(Funct3.ADD, vpc, imm_u, False)
     elif opcode == Ops.LUI:
         #U-type Instruction
-        pend = imm_u << 12
+        pend = imm_u
     elif opcode == Ops.OP:
         # R-type Instruction
         pend = arith(funct3, vs1, vs2, funct7 == 0b0100000)
     elif opcode == Ops.IMM:
         # I-type Instruction
-        pend = arith(funct3, vs1, sign_extend(imm_i, 12), funct7 == 0b0100000 and funct3 == Funct3.SRAI)
+        pend = arith(funct3, vs1, imm_i, funct7 == 0b0100000 and funct3 == Funct3.SRAI)
     elif opcode == Ops.MISC:
         pass
     elif opcode == Ops.SYSTEM:
@@ -215,7 +215,7 @@ def step():
         if funct3 == Funct3.CSRRS:
             pass
         elif funct3 == Funct3.CSRRW:
-            if imm_i == 3072:
+            if imm_i == -1024:
                 return False
         elif funct3 == Funct3.CSRRWI:
             pass
@@ -228,7 +228,7 @@ def step():
     # Memory access step
     elif opcode == Ops.LOAD:
         # I-type Instruction
-        addr = (vs1 + sign_extend(imm_i, 12))
+        addr = (vs1 + imm_i)
         if funct3 == Funct3.LB:
             pend = sign_extend(r32(addr)&0xFF, 8)
         elif funct3 == Funct3.LH:
@@ -241,7 +241,7 @@ def step():
             pend = r32(addr)&0xFFFF
     elif opcode == Ops.STORE:
         # S-type Instruction
-        addr = (vs1 + sign_extend(imm_s, 12))
+        addr = (vs1 + imm_s)
         if funct3 == Funct3.SB:
             ws(addr, struct.pack("B", vs2&0xFF))
         elif funct3 == Funct3.SH:
