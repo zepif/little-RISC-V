@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
+import os
 from elftools.elf.elffile import ELFFile
 from elftools.common.exceptions import ELFError
 import struct
+import binascii
 import glob
 
 regnames = \
@@ -184,7 +186,7 @@ def step():
     do_load = False
     do_store = False
     
-    print("%x %8x %r" % (vpc, ins, opcode))
+    #print("%x %8x %r" % (vpc, ins, opcode))
 
     # *** Execute ***
     if opcode == Ops.JAL:
@@ -273,6 +275,8 @@ def step():
     return True
 
 if __name__ == "__main__":
+    if not os.path.isdir('test-cache'):
+        os.mkdir('test-cache')
     for x in glob.glob("riscv-tests/isa/rv32ui-*"):
         if x.endswith('.dump'):
             continue
@@ -284,10 +288,14 @@ if __name__ == "__main__":
                 e = ELFFile(f)
                 for s in e.iter_segments():
                     ws(s.header.p_paddr, s.data())
+                with open("test-cache/%s" % x.split("/")[-1], "wb") as g:
+                    g.write(b'\n'.join([binascii.hexlify(memory[i:i+4][::-1]) for i in range(0,len(memory),4)]))
                 regfile[PC] = 0x80000000
                 #print(x, e, text)
+                inscnt = 0
                 while(step()):
-                    pass
+                    inscnt += 1
+                print("  ran %d instructions" % inscnt)
         except ELFError as elf_error:
             print(f"error processing {x}: {elf_error}")
             continue
