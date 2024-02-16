@@ -1,6 +1,6 @@
 # little-RISC-V
 
-A RISC-V core, first in Python, then in Verilog, then on FPGA.
+A RISC-V core, first in Python, then in Verilog
 
 # Getting started
 
